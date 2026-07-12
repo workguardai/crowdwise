@@ -299,12 +299,12 @@ footer{padding:32px 48px;border-top:1px solid rgba(255,255,255,.06);display:flex
     <div class="city-strip">
       <span class="city-strip-label">Try</span>
       <div class="cities-scroll">
-        <a class="city-tag" href="crowdwise-mvp-v3.html?city=Lisbon">🇵🇹 Lisbon</a>
-        <a class="city-tag" href="crowdwise-mvp-v3.html?city=Durrës">🇦🇱 Durrës</a>
-        <a class="city-tag" href="crowdwise-mvp-v3.html?city=Copenhagen">🇩🇰 Copenhagen</a>
-        <a class="city-tag" href="crowdwise-mvp-v3.html?city=Tirana">🇦🇱 Tirana</a>
-        <a class="city-tag" href="crowdwise-mvp-v3.html?city=Barcelona">🇪🇸 Barcelona</a>
-        <a class="city-tag" href="crowdwise-mvp-v3.html?city=Rome">🇮🇹 Rome</a>
+        <a class="city-tag" href="app.html?city=Lisbon">🇵🇹 Lisbon</a>
+        <a class="city-tag" href="app.html?city=Durrës">🇦🇱 Durrës</a>
+        <a class="city-tag" href="app.html?city=Copenhagen">🇩🇰 Copenhagen</a>
+        <a class="city-tag" href="app.html?city=Tirana">🇦🇱 Tirana</a>
+        <a class="city-tag" href="app.html?city=Barcelona">🇪🇸 Barcelona</a>
+        <a class="city-tag" href="app.html?city=Rome">🇮🇹 Rome</a>
       </div>
     </div>
   </div>
@@ -674,7 +674,7 @@ footer{padding:32px 48px;border-top:1px solid rgba(255,255,255,.06);display:flex
   <h2 class="final-title">Ready to find<br>your <span>space</span>?</h2>
   <p class="final-sub">Free to use. Any city. Right now.</p>
   <div class="final-actions">
-    <button class="btn-primary" onclick="goToApp()">🗺️ app.html</button>
+    <button class="btn-primary" onclick="goToApp()">🗺️ Open CrowdWise</button>
   </div>
 </section>
 
@@ -810,7 +810,7 @@ fetch('https://your-crowdwise-backend.railway.app/analytics/summary')
 
 // ── GO TO APP ──
 function goToApp(){
-  window.location.href='crowdwise-mvp-v3.html';
+  window.location.href='app.html';
 }
 
 // ── INTERSECTION OBSERVER for subtle scroll reveals ──
