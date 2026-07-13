@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CrowdWise — Transport Prices</title>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --navy:#1B4F72;--blue:#5DADE2;--pale:#D6EAF8;
+  --ink:#0D1B2A;--muted:#4A5568;--sub:#8A9BB0;
+  --cream:#F8F9FB;--white:#fff;--sand:#E8EDF3;
+  --taxi:#F5C842;--bus:#2ECC71;--metro:#8B5CF6;--bike:#10B981;--walk:#F97316;
+  --red:#E53E3E;--amber:#D4870A;--green:#1E8449;
+}
+html,body{min-height:100%;background:var(--cream);font-family:'Poppins',sans-serif;color:var(--ink)}
+
+/* ── HEADER ── */
+header{background:var(--navy);padding:14px 20px;display:flex;align-items:center;justify-content:space-between;gap:12px}
+.logo{display:flex;align-items:center;gap:8px;text-decoration:none}
+.logo-mark{width:30px;height:30px;background:var(--blue);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0}
+.logo-name{font-size:17px;font-weight:700;color:#fff;letter-spacing:-.2px}.logo-name span{color:var(--blue)}
+.back-link{font-size:12px;font-weight:500;color:rgba(255,255,255,.6);text-decoration:none;display:flex;align-items:center;gap:4px}
+.back-link:hover{color:#fff}
+
+/* ── SEARCH ── */
+.search-wrap{max-width:600px;margin:32px auto 0;padding:0 16px}
+.search-label{font-size:13px;font-weight:600;color:var(--muted);margin-bottom:8px;letter-spacing:.3px}
+.search-row{display:flex;gap:8px}
+.search-input{flex:1;border:2px solid var(--sand);border-radius:12px;padding:13px 16px;font-family:'Poppins',sans-serif;font-size:15px;color:var(--ink);outline:none;background:var(--white);transition:border-color .2s}
+.search-input:focus{border-color:var(--blue)}
+.search-input::placeholder{color:var(--sub)}
+.search-btn{background:var(--navy);color:#fff;border:none;border-radius:12px;padding:13px 24px;font-family:'Poppins',sans-serif;font-size:14px;font-weight:600;cursor:pointer;white-space:nowrap;transition:background .18s;display:flex;align-items:center;gap:6px}
+.search-btn:hover{background:#15415F}
+.search-btn:disabled{opacity:.5;cursor:not-allowed}
+
+/* ── QUICK CITIES ── */
+.quick-row{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+.quick-pill{padding:5px 12px;border-radius:20px;font-size:11px;font-weight:500;background:var(--sand);color:var(--muted);border:none;cursor:pointer;font-family:'Poppins',sans-serif;transition:.15s}
+.quick-pill:hover{background:var(--pale);color:var(--navy)}
+
+/* ── STATE: loading / empty / error ── */
+#output{max-width:600px;margin:24px auto 40px;padding:0 16px}
+.state-box{text-align:center;padding:48px 20px;color:var(--sub)}
+.state-box .icon{font-size:40px;margin-bottom:12px}
+.state-box .title{font-size:16px;font-weight:600;color:var(--muted);margin-bottom:6px}
+.state-box .sub{font-size:13px;line-height:1.6}
+.loading-dots{display:flex;justify-content:center;gap:6px;margin:16px 0}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--blue);animation:bounce 1.2s ease-in-out infinite}
+.dot:nth-child(2){animation-delay:.15s;background:var(--navy)}
+.dot:nth-child(3){animation-delay:.3s;background:var(--blue)}
+@keyframes bounce{0%,80%,100%{transform:translateY(0);opacity:.4}40%{transform:translateY(-8px);opacity:1}}
+
+/* ── TRANSIT CARD ── */
+.transit-card{background:var(--white);border-radius:18px;overflow:hidden;box-shadow:0 4px 24px rgba(13,27,42,.09);border:1px solid var(--sand);animation:slideUp .35s ease both}
+@keyframes slideUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+
+/* Card header — styled like a real transit card */
+.card-header{padding:20px 22px;background:linear-gradient(135deg,var(--navy) 0%,#1A3D5C 100%);position:relative;overflow:hidden}
+.card-header::before{content:'';position:absolute;top:-30px;right:-30px;width:160px;height:160px;border-radius:50%;background:rgba(93,173,226,.1);pointer-events:none}
+.card-header::after{content:'';position:absolute;bottom:-50px;right:40px;width:120px;height:120px;border-radius:50%;background:rgba(93,173,226,.06);pointer-events:none}
+.card-city{font-size:24px;font-weight:700;color:#fff;letter-spacing:-.4px;margin-bottom:2px;position:relative}
+.card-network{font-size:12px;color:rgba(255,255,255,.6);font-weight:400;position:relative}
+.card-time-badge{position:absolute;top:20px;right:22px;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);border-radius:20px;padding:4px 12px;font-size:11px;font-weight:600;color:rgba(255,255,255,.85)}
+.card-note{margin-top:12px;font-size:11px;color:rgba(255,255,255,.5);font-style:italic;position:relative}
+
+/* Mode rows */
+.mode-list{padding:6px 0}
+.mode-row{display:flex;align-items:center;padding:14px 22px;border-bottom:1px solid var(--sand);gap:14px;transition:background .15s;cursor:default}
+.mode-row:last-child{border-bottom:none}
+.mode-row:hover{background:var(--cream)}
+.mode-icon{width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0}
+.mode-info{flex:1;min-width:0}
+.mode-name{font-size:13px;font-weight:600;color:var(--ink);margin-bottom:1px}
+.mode-detail{font-size:11px;color:var(--sub);font-weight:300;line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mode-prices{text-align:right;flex-shrink:0}
+.mode-price-main{font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:600;color:var(--navy);line-height:1}
+.mode-price-label{font-size:9px;color:var(--sub);margin-top:2px;font-weight:500;letter-spacing:.4px;text-transform:uppercase}
+
+/* Day pass strip */
+.daypass-strip{display:flex;gap:6px;padding:12px 22px;background:var(--pale);border-top:1px solid rgba(93,173,226,.2);flex-wrap:wrap}
+.pass-chip{display:flex;align-items:center;gap:5px;padding:6px 12px;background:var(--white);border:1px solid rgba(93,173,226,.3);border-radius:20px;font-size:11px;font-weight:500;color:var(--navy)}
+.pass-chip-label{color:var(--sub);font-weight:400}
+
+/* Surge / time notice */
+.time-notice{margin:0 22px 14px;padding:10px 14px;border-radius:10px;font-size:11px;display:flex;align-items:flex-start;gap:8px;line-height:1.5}
+.time-notice.night{background:#1A1A2E;color:#A78BFA}
+.time-notice.peak{background:#FFF8E1;color:#856404;border:1px solid #FFD54F}
+.time-notice.normal{background:#EAFAF1;color:#1E8449;border:1px solid #A9DFBF}
+.tn-ico{font-size:14px;flex-shrink:0;margin-top:1px}
+
+/* Tips section */
+.tips-section{padding:14px 22px 18px;border-top:1px solid var(--sand)}
+.tips-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--sub);margin-bottom:10px}
+.tip-row{display:flex;gap:8px;align-items:flex-start;margin-bottom:8px;font-size:12px;color:var(--muted);line-height:1.5}
+.tip-ico{flex-shrink:0;margin-top:1px}
+
+/* Comparison row */
+.compare-row{padding:14px 22px;background:var(--cream);border-top:1px solid var(--sand)}
+.compare-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--sub);margin-bottom:10px}
+.compare-bars{display:flex;flex-direction:column;gap:7px}
+.cbar-row{display:flex;align-items:center;gap:8px}
+.cbar-label{font-size:11px;font-weight:500;color:var(--muted);width:70px;flex-shrink:0;display:flex;align-items:center;gap:5px}
+.cbar-track{flex:1;height:6px;background:var(--sand);border-radius:4px;overflow:hidden}
+.cbar-fill{height:100%;border-radius:4px;transition:width .8s ease}
+.cbar-val{font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;color:var(--navy);width:40px;text-align:right;flex-shrink:0}
+
+/* Key screen */
+.key-screen{max-width:440px;margin:40px auto;padding:0 16px}
+.key-card{background:var(--white);border-radius:18px;padding:28px 24px;text-align:center;box-shadow:0 4px 24px rgba(13,27,42,.09);border:1px solid var(--sand)}
+.key-logo{font-size:36px;margin-bottom:10px}
+.key-title{font-size:17px;font-weight:700;color:var(--ink);margin-bottom:5px}
+.key-sub{font-size:12px;color:var(--muted);line-height:1.65;margin-bottom:16px}
+.key-steps{text-align:left;background:var(--cream);border-radius:8px;padding:12px 14px;margin:12px 0;font-size:11px;color:var(--muted);line-height:2}
+.key-steps strong{color:var(--ink)}
+.key-steps a{color:var(--navy)}
+.key-row{display:flex;gap:7px;margin-bottom:6px}
+.key-input{flex:1;border:1.5px solid var(--sand);border-radius:9px;padding:10px 12px;font-family:'Poppins',sans-serif;font-size:12px;color:var(--ink);outline:none;min-width:0}
+.key-input:focus{border-color:var(--blue)}
+.key-submit{background:var(--navy);color:#fff;border:none;border-radius:9px;padding:10px 16px;font-family:'Poppins',sans-serif;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap}
+.key-err{color:var(--red);font-size:11px;margin-top:4px;min-height:16px}
+.key-note{font-size:10px;color:var(--sub);margin-top:10px}
+
+@media(max-width:500px){
+  .card-city{font-size:20px}
+  .mode-row{padding:12px 16px;gap:10px}
+  .mode-icon{width:32px;height:32px;font-size:16px}
+  .mode-price-main{font-size:16px}
+  .daypass-strip{padding:10px 16px}
+  .tips-section,.compare-row{padding:12px 16px 16px}
+  .search-btn{padding:13px 16px;font-size:13px}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <a href="crowdwise-mvp-v3.html" class="logo">
+    <div class="logo-mark">🌊</div>
+    <div class="logo-name">Crowd<span>Wise</span></div>
+  </a>
+  <a href="crowdwise-mvp-v3.html" class="back-link">← Back to map</a>
+</header>
+
+<div class="search-wrap">
+  <div class="search-label">Transport prices — any city</div>
+  <div class="search-row">
+    <input class="search-input" id="cityInput" type="text" placeholder="Enter a city — e.g. Lisbon, Tokyo, Copenhagen…" autocomplete="off"/>
+    <button class="search-btn" id="searchBtn" onclick="search()">
+      <span>🔍</span> Search
+    </button>
+  </div>
+  <div class="quick-row">
+    <button class="quick-pill" onclick="quick('Lisbon')">🇵🇹 Lisbon</button>
+    <button class="quick-pill" onclick="quick('Copenhagen')">🇩🇰 Copenhagen</button>
+    <button class="quick-pill" onclick="quick('Tirana')">🇦🇱 Tirana</button>
+    <button class="quick-pill" onclick="quick('Barcelona')">🇪🇸 Barcelona</button>
+    <button class="quick-pill" onclick="quick('Tokyo')">🇯🇵 Tokyo</button>
+    <button class="quick-pill" onclick="quick('Amsterdam')">🇳🇱 Amsterdam</button>
+    <button class="quick-pill" onclick="quick('Rome')">🇮🇹 Rome</button>
+    <button class="quick-pill" onclick="quick('Dubai')">🇦🇪 Dubai</button>
+  </div>
+</div>
+
+<div id="output">
+  <div class="state-box" id="emptyState">
+    <div class="icon">🚌</div>
+    <div class="title">Search any city</div>
+    <div class="sub">Get real local transport prices — bus, metro, taxi, e-bike — with day passes and night rate surcharges.</div>
+  </div>
+</div>
+
+<script>
+// ── KEY MANAGEMENT ──
+function getKey(){return localStorage.getItem('cw_k');}
+
+function showKeyScreen(){
+  document.getElementById('output').innerHTML=`
+    <div class="key-card">
+      <div class="key-logo">🔑</div>
+      <div class="key-title">API Key Required</div>
+      <div class="key-sub">CrowdWise uses the Anthropic API to fetch real transport prices. Enter your key once — stored only in your browser.</div>
+      <div class="key-steps">
+        <strong>Get your free key:</strong><br>
+        1. <a href="https://console.anthropic.com" target="_blank">console.anthropic.com</a> → sign up<br>
+        2. API Keys → Create Key<br>
+        3. Copy the key (sk-ant…) and paste below
+      </div>
+      <div class="key-row">
+        <input class="key-input" id="keyInput" type="password" placeholder="sk-ant-api03-…" autocomplete="off"/>
+        <button class="key-submit" onclick="saveKey()">Activate →</button>
+      </div>
+      <div class="key-err" id="keyErr"></div>
+      <div class="key-note">Stored locally. Never shared.</div>
+    </div>`;
+  document.getElementById('keyInput').addEventListener('keydown',e=>{if(e.key==='Enter')saveKey();});
+}
+
+function saveKey(){
+  const k=document.getElementById('keyInput')?.value.trim();
+  const err=document.getElementById('keyErr');
+  if(!k){if(err)err.textContent='Paste your key above';return;}
+  if(!k.startsWith('sk-ant')){if(err)err.textContent='Key should start with sk-ant…';return;}
+  localStorage.setItem('cw_k',k);
+  document.getElementById('output').innerHTML='<div class="state-box" id="emptyState"><div class="icon">✅</div><div class="title">Key saved!</div><div class="sub">Now search any city above.</div></div>';
+}
+
+// ── AI CALL ──
+async function callAI(prompt){
+  const key=getKey();
+  if(!key){showKeyScreen();throw new Error('No key');}
+  const r=await fetch('https://api.anthropic.com/v1/messages',{
+    method:'POST',
+    headers:{
+      'Content-Type':'application/json',
+      'x-api-key':key,
+      'anthropic-version':'2023-06-01',
+      'anthropic-dangerous-direct-browser-access':'true'
+    },
+    body:JSON.stringify({
+      model:'claude-sonnet-4-20250514',
+      max_tokens:1500,
+      messages:[{role:'user',content:prompt}]
+    })
+  });
+  const d=await r.json();
+  if(d.error){
+    if(d.error.type==='authentication_error'){localStorage.removeItem('cw_k');showKeyScreen();}
+    throw new Error(d.error.message);
+  }
+  return d.content[0].text;
+}
+
+// ── FETCH TRANSPORT ──
+async function fetchPrices(city){
+  const txt=await callAI(`You are a transport pricing expert. Give me accurate, current public transport prices for ${city}.
+
+Return ONLY a valid JSON object — no markdown, no explanation, nothing else before or after the JSON.
+
+{
+  "city": "${city}",
+  "country": "Portugal",
+  "currency": "€",
+  "currencyCode": "EUR",
+  "networks": "Carris, Metro Lisboa",
+  "lastUpdated": "2024",
+  "bus": {
+    "single": 2.00,
+    "dayPass": 6.80,
+    "weekPass": null,
+    "monthPass": 40.00,
+    "notes": "Valid on all Carris buses and trams. Buy on board or at vending machines.",
+    "available": true
+  },
+  "metro": {
+    "single": 1.85,
+    "dayPass": 6.90,
+    "weekPass": null,
+    "monthPass": 40.00,
+    "notes": "4 lines covering central Lisbon. Runs 06:30–01:00.",
+    "available": true
+  },
+  "tram": {
+    "single": 3.00,
+    "notes": "Historic trams 28E and 15E. Tourist surcharge applies.",
+    "available": true
+  },
+  "taxi": {
+    "flagFall": 3.25,
+    "perKm": 0.95,
+    "perKmNight": 1.19,
+    "nightSurchargePercent": 20,
+    "nightHoursStart": 21,
+    "nightHoursEnd": 6,
+    "luggageFee": 1.60,
+    "notes": "Licensed taxis are cream coloured. Always ask for the meter.",
+    "available": true
+  },
+  "rideshare": {
+    "name": "Uber / Bolt",
+    "estimate3km": 7.50,
+    "estimate10km": 18.00,
+    "notes": "Usually slightly cheaper than taxis. Surge pricing applies at night.",
+    "available": true
+  },
+  "ebike": {
+    "name": "Gira",
+    "unlockFee": 1.00,
+    "perMinute": 0.20,
+    "dayPass": 2.00,
+    "notes": "City bike sharing. Electric bikes available. App required.",
+    "available": true
+  },
+  "ferry": {
+    "single": 1.45,
+    "notes": "Transtejo ferries across the Tagus. Frequent service.",
+    "available": true
+  },
+  "tips": [
+    "The Viva Viagem card (€0.50) works across all transport and saves money over single tickets.",
+    "Avoid tram 28 during peak hours — it gets extremely crowded with tourists.",
+    "Night buses run after metro closes and cost the same as daytime."
+  ]
+}
+
+Research real current prices for ${city}. If a transport type does not exist in ${city}, set "available": false.
+Return ONLY the JSON.`);
+
+  // Parse JSON
+  const clean=txt.replace(/```json\n?/g,'').replace(/```\n?/g,'').trim();
+  const start=clean.indexOf('{'),end=clean.lastIndexOf('}');
+  if(start<0||end<0)throw new Error('Could not parse response');
+  return JSON.parse(clean.slice(start,end+1));
+}
+
+// ── RENDER ──
+function renderCard(data,city){
+  const cur=data.currency||'€';
+  const h=new Date().getHours();
+  const nightStart=data.taxi?.nightHoursStart||21;
+  const nightEnd=data.taxi?.nightHoursEnd||6;
+  const isNight=h>=nightStart||h<nightEnd;
+  const isPeak=(h>=7&&h<=9)||(h>=17&&h<=19);
+
+  // Time notice
+  let timeNotice='';
+  if(isNight){
+    timeNotice=`<div class="time-notice night"><div class="tn-ico">🌙</div><div>Night rates are currently active (${String(nightStart).padStart(2,'0')}:00–${String(nightEnd).padStart(2,'0')}:00). Taxi and rideshare fares are higher right now. Metro may have reduced hours.</div></div>`;
+  }else if(isPeak){
+    timeNotice=`<div class="time-notice peak"><div class="tn-ico">⚡</div><div>Peak hours — expect busier services and possible Uber/Bolt surge pricing.</div></div>`;
+  }else{
+    timeNotice=`<div class="time-notice normal"><div class="tn-ico">✓</div><div>Normal pricing period. Standard fares apply.</div></div>`;
+  }
+
+  // Build mode rows
+  const modes=[];
+
+  if(data.bus?.available!==false&&data.bus){
+    const price=isNight&&data.bus.nightSingle?data.bus.nightSingle:data.bus.single;
+    modes.push({
+      icon:'🚌',color:'#2ECC71',bg:'#EAFAF1',
+      name:'Bus',
+      detail:data.bus.notes||'Public bus network',
+      price:price?`${cur}${price.toFixed(2)}`:'—',
+      label:'single fare'
+    });
+  }
+  if(data.metro?.available!==false&&data.metro){
+    modes.push({
+      icon:'🚇',color:'#8B5CF6',bg:'#F3E8FF',
+      name:'Metro / Subway',
+      detail:data.metro.notes||'Underground rail network',
+      price:data.metro.single?`${cur}${data.metro.single.toFixed(2)}`:'—',
+      label:'single fare'
+    });
+  }
+  if(data.tram?.available!==false&&data.tram){
+    modes.push({
+      icon:'🚃',color:'#F59E0B',bg:'#FEF3C7',
+      name:'Tram',
+      detail:data.tram.notes||'City tram network',
+      price:data.tram.single?`${cur}${data.tram.single.toFixed(2)}`:'—',
+      label:'single fare'
+    });
+  }
+  if(data.taxi?.available!==false&&data.taxi){
+    const fare3km=data.taxi.flagFall+(3*(isNight?data.taxi.perKmNight||data.taxi.perKm*1.2:data.taxi.perKm));
+    modes.push({
+      icon:'🚕',color:'#F5C842',bg:'#FEF9C3',
+      name:`Taxi${isNight?' 🌙':''}`,
+      detail:isNight?`Night rate · ${data.taxi.notes||''}`:(data.taxi.notes||'Metered taxi'),
+      price:`${cur}${fare3km.toFixed(2)}`,
+      label:'est. 3km trip'
+    });
+  }
+  if(data.rideshare?.available!==false&&data.rideshare){
+    modes.push({
+      icon:'📱',color:'#06B6D4',bg:'#ECFEFF',
+      name:data.rideshare.name||'Rideshare',
+      detail:data.rideshare.notes||'App-based ride',
+      price:data.rideshare.estimate3km?`${cur}${data.rideshare.estimate3km.toFixed(2)}`:'Varies',
+      label:'est. 3km trip'
+    });
+  }
+  if(data.ebike?.available!==false&&data.ebike){
+    modes.push({
+      icon:'🛴',color:'#10B981',bg:'#ECFDF5',
+      name:data.ebike.name||'E-Bike',
+      detail:data.ebike.notes||'Shared e-bike / scooter',
+      price:data.ebike.unlockFee!=null?`${cur}${data.ebike.unlockFee.toFixed(2)}`:'—',
+      label:`unlock + ${cur}${(data.ebike.perMinute||0).toFixed(2)}/min`
+    });
+  }
+  if(data.ferry?.available!==false&&data.ferry){
+    modes.push({
+      icon:'⛴️',color:'#3B82F6',bg:'#EFF6FF',
+      name:'Ferry / Boat',
+      detail:data.ferry.notes||'Water transport',
+      price:data.ferry.single?`${cur}${data.ferry.single.toFixed(2)}`:'—',
+      label:'single fare'
+    });
+  }
+
+  const modeRows=modes.map(m=>`
+    <div class="mode-row">
+      <div class="mode-icon" style="background:${m.bg}">${m.icon}</div>
+      <div class="mode-info">
+        <div class="mode-name">${m.name}</div>
+        <div class="mode-detail" title="${m.detail}">${m.detail}</div>
+      </div>
+      <div class="mode-prices">
+        <div class="mode-price-main">${m.price}</div>
+        <div class="mode-price-label">${m.label}</div>
+      </div>
+    </div>`).join('');
+
+  // Day passes
+  const passes=[];
+  if(data.bus?.dayPass)passes.push({label:'Bus day pass',val:`${cur}${data.bus.dayPass.toFixed(2)}`});
+  if(data.metro?.dayPass)passes.push({label:'Metro day pass',val:`${cur}${data.metro.dayPass.toFixed(2)}`});
+  if(data.ebike?.dayPass)passes.push({label:'Bike day pass',val:`${cur}${data.ebike.dayPass.toFixed(2)}`});
+  if(data.bus?.monthPass)passes.push({label:'Monthly pass',val:`${cur}${data.bus.monthPass.toFixed(2)}`});
+  const passStrip=passes.length?`
+    <div class="daypass-strip">
+      ${passes.map(p=>`<div class="pass-chip"><span>🎫</span><span class="pass-chip-label">${p.label}</span> <strong>${p.val}</strong></div>`).join('')}
+    </div>`:'';
+
+  // Comparison bars (normalise to highest)
+  const pricePoints=modes.filter(m=>m.price!=='—'&&m.price!=='Varies').map(m=>({name:m.name.replace(/ 🌙/,''),val:parseFloat(m.price.replace(cur,''))||0,icon:m.icon}));
+  const maxP=Math.max(...pricePoints.map(p=>p.val),1);
+  const compareBars=pricePoints.length>1?`
+    <div class="compare-row">
+      <div class="compare-title">Cost comparison — single trip</div>
+      <div class="compare-bars">
+        ${pricePoints.map(p=>`
+          <div class="cbar-row">
+            <div class="cbar-label">${p.icon} ${p.name.split(' ')[0]}</div>
+            <div class="cbar-track"><div class="cbar-fill" style="width:${Math.round((p.val/maxP)*100)}%;background:${p.val===Math.min(...pricePoints.map(x=>x.val))?'#1E8449':'#5DADE2'}"></div></div>
+            <div class="cbar-val">${cur}${p.val.toFixed(2)}</div>
+          </div>`).join('')}
+      </div>
+    </div>`:'';
+
+  // Tips
+  const tips=data.tips||[];
+  const tipsHTML=tips.length?`
+    <div class="tips-section">
+      <div class="tips-title">Local tips</div>
+      ${tips.map(t=>`<div class="tip-row"><div class="tip-ico">💡</div><div>${t}</div></div>`).join('')}
+    </div>`:'';
+
+  return `
+    <div class="transit-card">
+      <div class="card-header">
+        <div class="card-time-badge">${isNight?'🌙 Night rates':isPeak?'⚡ Peak hours':'✓ Normal rates'}</div>
+        <div class="card-city">${data.city||city}</div>
+        <div class="card-network">${data.networks||data.country||''} · ${data.currency||''}${data.currencyCode?' ('+data.currencyCode+')':''}</div>
+        <div class="card-note">Prices as of ${data.lastUpdated||new Date().getFullYear()} · Always verify locally</div>
+      </div>
+      ${timeNotice}
+      <div class="mode-list">${modeRows}</div>
+      ${passStrip}
+      ${compareBars}
+      ${tipsHTML}
+    </div>`;
+}
+
+// ── SEARCH ──
+async function search(){
+  const city=document.getElementById('cityInput').value.trim();
+  if(!city)return;
+  if(!getKey()){showKeyScreen();return;}
+
+  const btn=document.getElementById('searchBtn');
+  btn.disabled=true;btn.innerHTML='<span>⏳</span> Searching…';
+
+  document.getElementById('output').innerHTML=`
+    <div class="state-box">
+      <div class="loading-dots"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>
+      <div class="title">Getting prices for ${city}…</div>
+      <div class="sub">Fetching real local transport fares</div>
+    </div>`;
+
+  try{
+    const data=await fetchPrices(city);
+    document.getElementById('output').innerHTML=renderCard(data,city);
+  }catch(e){
+    document.getElementById('output').innerHTML=`
+      <div class="state-box">
+        <div class="icon">⚠️</div>
+        <div class="title">Could not load prices</div>
+        <div class="sub">${e.message||'Please try again.'}</div>
+      </div>`;
+  }
+
+  btn.disabled=false;btn.innerHTML='<span>🔍</span> Search';
+}
+
+function quick(city){
+  document.getElementById('cityInput').value=city;
+  search();
+}
+
+// ── INIT ──
+document.getElementById('cityInput').addEventListener('keydown',e=>{if(e.key==='Enter')search();});
+if(!getKey())showKeyScreen();
+</script>
+</body>
+</html>
