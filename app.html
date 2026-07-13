@@ -452,7 +452,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;heigh
   </div>
 
   <!-- Drawing toolbar — shown when draw mode active -->
-  <div id="drawToolbar" style="display:none;position:absolute;top:8px;left:50%;transform:translateX(-50%);z-index:700;background:#fff;border-radius:12px;padding:8px 12px;box-shadow:0 4px 16px rgba(0,0,0,.2);display:none;align-items:center;gap:8px;white-space:nowrap;font-family:'Poppins',sans-serif">
+  <div id="drawToolbar" style="display:none;position:absolute;top:8px;left:50%;transform:translateX(-50%);z-index:700;background:#fff;border-radius:12px;padding:8px 12px;box-shadow:0 4px 16px rgba(0,0,0,.2);align-items:center;gap:8px;white-space:nowrap;font-family:'Poppins',sans-serif">
     <span style="font-size:12px;font-weight:600;color:var(--danger)">✏️ Draw the affected area</span>
     <button id="drawUndoBtn" onclick="drawUndo()" style="padding:4px 10px;border-radius:6px;background:var(--cream);border:1px solid var(--sand);font-size:10px;font-weight:600;color:var(--muted);cursor:pointer;font-family:'Poppins',sans-serif">↩ Undo</button>
     <button onclick="drawFinish()" style="padding:4px 12px;border-radius:6px;background:var(--danger);color:#fff;border:none;font-size:10px;font-weight:700;cursor:pointer;font-family:'Poppins',sans-serif">✓ Done</button>
@@ -687,7 +687,8 @@ function notify(msg, type, ms) {
   var n = document.createElement('div');
   n.className = 'notif ' + (type||'info');
   n.textContent = msg;
-  document.getElementById('mapwrap').appendChild(n);
+  var wrap = document.getElementById('mapwrap') || document.body;
+  wrap.appendChild(n);
   setTimeout(function(){ if(n.parentNode) n.remove(); }, ms||4000);
 }
 
@@ -705,14 +706,20 @@ function initApp() {
 }
 
 function saveKey() {
-  var k = document.getElementById('keyInput').value.trim();
+  var inp = document.getElementById('keyInput');
   var err = document.getElementById('keyErr');
-  if(!k){ err.textContent='Paste your API key above'; return; }
-  if(k.indexOf('sk-ant')!==0){ err.textContent='Key should start with sk-ant…'; return; }
+  if(!inp || !err) return;
+  var k = inp.value.replace(/\s+/g,''); // strip all whitespace
+  if(!k) { err.textContent='Paste your API key above'; return; }
+  if(k.indexOf('sk-ant')<0 && k.indexOf('sk-')!==0) {
+    err.textContent='This does not look like a valid key. It should start with sk-ant…';
+    return;
+  }
   err.textContent='';
   localStorage.setItem('cw_k', k);
   document.getElementById('authScreen').style.display='none';
-  notify('✅ API key saved! Search any city.','ok',3000);
+  // Show success in the key error area first (safe), then notify
+  setTimeout(function(){ notify('✅ API key saved! Search any city.','ok',3000); }, 100);
 }
 
 document.getElementById('keyInput').addEventListener('keydown', function(e){ if(e.key==='Enter') saveKey(); });
@@ -1648,7 +1655,7 @@ function openSafetyPanel() {
     zones.slice(0,5).forEach(function(z){
       var cat=SAFETY_CATS.find(function(c){return c.t===z.type;})||{e:'!',n:'Alert'};
       var col=z.count>=10?'#C0392B':z.count>=5?'#E74C3C':'#F39C12';
-      html+='<div class="safety-report-item" style="cursor:pointer" onclick="openZoneDetail(''+z.id+'')">';
+      html+='<div class="safety-report-item" style="cursor:pointer" onclick="openZoneDetail('+JSON.stringify(z.id)+')">';
       html+='<div class="sri-icon">'+cat.e+'</div><div class="sri-body"><div class="sri-type">'+cat.n+'</div>';
       html+='<div class="sri-note" style="color:'+col+';font-weight:600">'+z.count+' reports in 30 days</div>';
       html+='<div class="sri-meta">Tap for details</div></div></div>';
@@ -1667,7 +1674,7 @@ function openSafetyPanel() {
     html+='<div class="sri-meta">'+ageTxt+' &middot; '+(r.confirmations||0)+' confirmations'+(dk?' &middot; '+fmtDist(dk)+' away':'')+' &nbsp;<span class="sri-confirm" data-rid="'+r.id+'" onclick="confirmReport(this.dataset.rid)">Still here</span></div>';
     html+='</div></div>';
   });}
-  html+='<div style="margin-top:14px;text-align:center"><button onclick="closeModal('detailOverlay');startDrawReport()" style="background:var(--danger);color:#fff;border:none;border-radius:20px;padding:9px 20px;font-family:Poppins,sans-serif;font-size:12px;font-weight:600;cursor:pointer">Report new incident</button></div>';
+  html+='<div style="margin-top:14px;text-align:center"><button onclick="closeModal(&quot;detailOverlay&quot;);startDrawReport()" style="background:var(--danger);color:#fff;border:none;border-radius:20px;padding:9px 20px;font-family:Poppins,sans-serif;font-size:12px;font-weight:600;cursor:pointer">Report new incident</button></div>';
   document.getElementById('detailContent').innerHTML=html;
   openModal('detailOverlay');
 }
