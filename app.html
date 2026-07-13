@@ -451,8 +451,16 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;heigh
     <span class="route-close" onclick="clearRoute()">✕</span>
   </div>
 
+  <!-- Drawing toolbar — shown when draw mode active -->
+  <div id="drawToolbar" style="display:none;position:absolute;top:8px;left:50%;transform:translateX(-50%);z-index:700;background:#fff;border-radius:12px;padding:8px 12px;box-shadow:0 4px 16px rgba(0,0,0,.2);display:none;align-items:center;gap:8px;white-space:nowrap;font-family:'Poppins',sans-serif">
+    <span style="font-size:12px;font-weight:600;color:var(--danger)">✏️ Draw the affected area</span>
+    <button id="drawUndoBtn" onclick="drawUndo()" style="padding:4px 10px;border-radius:6px;background:var(--cream);border:1px solid var(--sand);font-size:10px;font-weight:600;color:var(--muted);cursor:pointer;font-family:'Poppins',sans-serif">↩ Undo</button>
+    <button onclick="drawFinish()" style="padding:4px 12px;border-radius:6px;background:var(--danger);color:#fff;border:none;font-size:10px;font-weight:700;cursor:pointer;font-family:'Poppins',sans-serif">✓ Done</button>
+    <button onclick="cancelDraw()" style="padding:4px 10px;border-radius:6px;background:var(--cream);border:1px solid var(--sand);font-size:10px;font-weight:600;color:var(--muted);cursor:pointer;font-family:'Poppins',sans-serif">✕ Cancel</button>
+  </div>
+
   <!-- Report FAB -->
-  <button class="report-fab" onclick="openReportModal(null,null)">🚨 Report incident</button>
+  <button class="report-fab" onclick="startDrawReport()">✏️ Draw incident area</button>
 
   <!-- POI bar -->
   <div class="poi-bar" id="poiBar"></div>
@@ -513,19 +521,22 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;heigh
 </div>
 
 <!-- REPORT MODAL -->
-<div class="modal-overlay" id="reportOverlay" onclick="if(event.target===this)closeModal('reportOverlay')">
+<div class="modal-overlay" id="reportOverlay" onclick="if(event.target===this)cancelReport()">
   <div class="modal">
     <div class="modal-handle"></div>
-    <button class="modal-close" onclick="closeModal('reportOverlay')">✕</button>
+    <button class="modal-close" onclick="cancelReport()">✕</button>
     <div class="modal-title">🚨 Report an incident</div>
-    <div class="modal-sub">Help others stay safe. Reports are visible immediately on the map.</div>
+    <div id="reportModalSub" class="modal-sub">Area drawn on map. Now choose what happened.</div>
     <div class="modal-section">What is happening?</div>
     <div class="report-categories" id="reportCats"></div>
     <div class="modal-section">Add a note (optional)</div>
-    <textarea class="report-note-input" id="reportNote" placeholder="e.g. Bag snatching near the ATMs on Rua Augusta…" maxlength="200"></textarea>
-    <div style="font-size:9px;color:var(--sub);margin-top:4px;text-align:right"><span id="noteLen">0</span>/200</div>
-    <div style="font-size:11px;color:var(--sub);margin-top:8px">📍 Report will be pinned at your current location. Expires in 2 hours unless confirmed by others.</div>
-    <button class="report-submit" id="reportSubmitBtn" onclick="submitReport()">Submit report</button>
+    <textarea class="report-note-input" id="reportNote" placeholder="e.g. Bag snatching near the ATMs — be careful at night…" maxlength="200"></textarea>
+    <div style="font-size:9px;color:var(--sub);margin-top:3px;text-align:right"><span id="noteLen">0</span>/200</div>
+    <div style="font-size:10px;color:var(--sub);margin-top:8px;line-height:1.6">
+      ⏱ Visible for 2 hours. Each confirmation adds 30 min.<br>
+      📊 5+ reports in same area = permanent risk zone on map.
+    </div>
+    <button class="report-submit" id="reportSubmitBtn" onclick="submitReport()">📍 Submit report</button>
   </div>
 </div>
 
@@ -1407,68 +1418,176 @@ function openZoneDetail(zId) {
   document.getElementById('detailContent').innerHTML=html;
   openModal('detailOverlay');
 }
-var reportRadius = 50;
-var reportMode = false;
-var reportPinMarker = null;
-var reportCircle = null;
-function openReportModal(lat, lng) {
-  reportLat=lat?parseFloat(lat):null; reportLng=lng?parseFloat(lng):null;
-  selectedReportCat=null; reportRadius=50;
-  buildReportCats();
-  var noteEl=document.getElementById('reportNote');
-  if(noteEl){noteEl.value='';var nl=document.getElementById('noteLen');if(nl)nl.textContent='0';}
-  document.querySelectorAll('.area-size-btn').forEach(function(b){b.classList.toggle('active',b.dataset.radius==='50');});
-  var s1=document.getElementById('reportStep1'),s2=document.getElementById('reportStep2');
-  if(s1)s1.style.display='block'; if(s2)s2.style.display='none';
-  if(reportLat&&reportLng){placeReportPin(reportLat,reportLng);}
-  else{enterReportMode();}
-  openModal('reportOverlay');
+// ===================================================
+//  POLYGON DRAWING — report system
+// ===================================================
+var drawMode = false;
+var drawPoints = [];       // array of L.LatLng
+var drawPolyline = null;   // live preview line
+var drawPolygon = null;    // finished polygon
+var drawMarkers = [];      // vertex markers
+var reportPolygon = null;  // stored for submission
+var selectedReportCat = null;
+
+function startDrawReport() {
+  if(!MAP) { alert('Map not loaded yet'); return; }
+  // Clear any previous drawing
+  clearDrawing();
+  drawMode = true;
+  drawPoints = [];
+  // Show toolbar
+  var tb = document.getElementById('drawToolbar');
+  if(tb) { tb.style.display='flex'; }
+  // Change cursor
+  MAP.getContainer().style.cursor = 'crosshair';
+  // Disable map dragging on mobile so drawing works
+  MAP.dragging.disable();
+  MAP.on('click', onDrawClick);
+  MAP.on('mousemove', onDrawMove);
+  notify('Tap points to draw the affected area. Tap Done when finished.', 'info', 4000);
 }
-function enterReportMode() {
-  reportMode=true;
-  var h=document.getElementById('reportHint'); if(h)h.classList.add('show');
-  if(MAP){MAP.on('click',onMapClickReport); MAP.getContainer().style.cursor='crosshair';}
-}
-function cancelReportMode() {
-  reportMode=false;
-  var h=document.getElementById('reportHint'); if(h)h.classList.remove('show');
-  if(MAP){MAP.off('click',onMapClickReport); MAP.getContainer().style.cursor='';}
-}
-function onMapClickReport(e) {
-  if(!reportMode)return;
-  cancelReportMode();
-  placeReportPin(e.latlng.lat,e.latlng.lng);
-  openModal('reportOverlay');
-}
-function placeReportPin(lat,lng) {
-  reportLat=lat; reportLng=lng;
-  if(reportPinMarker){reportPinMarker.remove();reportPinMarker=null;}
-  if(reportCircle){reportCircle.remove();reportCircle=null;}
-  if(MAP){
-    reportPinMarker=L.marker([lat,lng],{icon:L.divIcon({className:'',html:'<div style="background:#E74C3C;width:22px;height:22px;border-radius:50%;border:3px solid #fff;box-shadow:0 2px 8px rgba(231,76,60,.5)"></div>',iconSize:[22,22],iconAnchor:[11,11]})}).addTo(MAP);
-    reportCircle=L.circle([lat,lng],{radius:reportRadius,color:'#E74C3C',fillColor:'#E74C3C',fillOpacity:.15,weight:2,dashArray:'5 4'}).addTo(MAP);
+
+function onDrawClick(e) {
+  if(!drawMode) return;
+  drawPoints.push(e.latlng);
+  // Add vertex dot
+  var dot = L.circleMarker(e.latlng, {
+    radius: 5, color: '#E74C3C', fillColor: '#fff',
+    fillOpacity: 1, weight: 2
+  }).addTo(MAP);
+  drawMarkers.push(dot);
+  updateDrawPreview();
+  // Auto-close if 3+ points and user clicks near first point
+  if(drawPoints.length >= 3) {
+    var firstPt = drawPoints[0];
+    var clickPt = e.latlng;
+    var pixelDist = MAP.latLngToLayerPoint(firstPt).distanceTo(MAP.latLngToLayerPoint(clickPt));
+    if(pixelDist < 20) {
+      drawFinish();
+    }
   }
-  var s1=document.getElementById('reportStep1'),s2=document.getElementById('reportStep2');
-  if(s1)s1.style.display='none'; if(s2)s2.style.display='block';
-  var ct=document.getElementById('reportPinConfirmText');
-  if(ct)ct.textContent='Pin placed at '+lat.toFixed(5)+', '+lng.toFixed(5);
 }
-function useLocationForReport() {
-  if(!S.uLat){notify('Enable location first','warn',3000);return;}
-  placeReportPin(S.uLat,S.uLng);
+
+function onDrawMove(e) {
+  if(!drawMode || drawPoints.length === 0) return;
+  updateDrawPreview(e.latlng);
 }
-function setAreaRadius(r,btn) {
-  reportRadius=r;
-  document.querySelectorAll('.area-size-btn').forEach(function(b){b.classList.remove('active');});
-  btn.classList.add('active');
-  if(reportCircle&&reportLat)reportCircle.setRadius(r);
+
+function updateDrawPreview(mousePt) {
+  if(drawPolyline) { drawPolyline.remove(); drawPolyline = null; }
+  if(drawPolygon) { drawPolygon.remove(); drawPolygon = null; }
+  var pts = drawPoints.slice();
+  if(mousePt) pts.push(mousePt);
+  if(pts.length < 2) return;
+  // Show filled polygon preview if 3+ points
+  if(pts.length >= 3) {
+    drawPolygon = L.polygon(pts, {
+      color: '#E74C3C', fillColor: '#E74C3C',
+      fillOpacity: 0.15, weight: 2, dashArray: '6 4'
+    }).addTo(MAP);
+  } else {
+    drawPolyline = L.polyline(pts, {
+      color: '#E74C3C', weight: 2, dashArray: '6 4'
+    }).addTo(MAP);
+  }
 }
+
+function drawUndo() {
+  if(drawPoints.length === 0) return;
+  drawPoints.pop();
+  var lastDot = drawMarkers.pop();
+  if(lastDot) lastDot.remove();
+  updateDrawPreview();
+}
+
+function drawFinish() {
+  if(drawPoints.length < 3) {
+    notify('Draw at least 3 points to create an area', 'warn', 3000);
+    return;
+  }
+  // Finalise polygon
+  MAP.off('click', onDrawClick);
+  MAP.off('mousemove', onDrawMove);
+  MAP.getContainer().style.cursor = '';
+  MAP.dragging.enable();
+  drawMode = false;
+  var tb = document.getElementById('drawToolbar');
+  if(tb) tb.style.display = 'none';
+  // Clear preview, draw final solid polygon
+  if(drawPolyline) { drawPolyline.remove(); drawPolyline = null; }
+  if(drawPolygon) { drawPolygon.remove(); drawPolygon = null; }
+  drawMarkers.forEach(function(m) { m.remove(); });
+  drawMarkers = [];
+  // Store polygon for submission
+  reportPolygon = drawPoints.slice();
+  // Draw the finalised polygon
+  drawPolygon = L.polygon(reportPolygon, {
+    color: '#E74C3C', fillColor: '#E74C3C',
+    fillOpacity: 0.18, weight: 2.5
+  }).addTo(MAP);
+  // Open the report category modal
+  selectedReportCat = null;
+  buildReportCats();
+  var noteEl = document.getElementById('reportNote');
+  if(noteEl) { noteEl.value = ''; var nl=document.getElementById('noteLen'); if(nl)nl.textContent='0'; }
+  openModal('reportOverlay');
+}
+
+function cancelDraw() {
+  MAP.off('click', onDrawClick);
+  MAP.off('mousemove', onDrawMove);
+  MAP.getContainer().style.cursor = '';
+  MAP.dragging.enable();
+  drawMode = false;
+  var tb = document.getElementById('drawToolbar');
+  if(tb) tb.style.display = 'none';
+  clearDrawing();
+  notify('Drawing cancelled', 'info', 2000);
+}
+
+function clearDrawing() {
+  drawPoints = [];
+  drawMarkers.forEach(function(m) { try{m.remove();}catch(e){} });
+  drawMarkers = [];
+  if(drawPolyline) { try{drawPolyline.remove();}catch(e){} drawPolyline=null; }
+  if(drawPolygon)  { try{drawPolygon.remove();}catch(e){} drawPolygon=null; }
+}
+
+function openReportModal(lat, lng) {
+  // When called from a POI or location, draw a small circle around that point
+  if(lat && lng) {
+    clearDrawing();
+    var center = L.latLng(parseFloat(lat), parseFloat(lng));
+    // Create a circle of ~80m as the default area
+    var pts = [];
+    for(var i=0; i<12; i++) {
+      var angle = (i/12)*2*Math.PI;
+      var dlat = (80/111320)*Math.sin(angle);
+      var dlng = (80/(111320*Math.cos(center.lat*Math.PI/180)))*Math.cos(angle);
+      pts.push(L.latLng(center.lat+dlat, center.lng+dlng));
+    }
+    reportPolygon = pts;
+    drawPolygon = L.polygon(pts, {
+      color:'#E74C3C', fillColor:'#E74C3C', fillOpacity:.18, weight:2.5
+    }).addTo(MAP);
+    selectedReportCat = null;
+    buildReportCats();
+    var noteEl=document.getElementById('reportNote');
+    if(noteEl){noteEl.value='';var nl=document.getElementById('noteLen');if(nl)nl.textContent='0';}
+    openModal('reportOverlay');
+  } else {
+    startDrawReport();
+  }
+}
+
 function cancelReport() {
-  cancelReportMode();
-  if(reportPinMarker){reportPinMarker.remove();reportPinMarker=null;}
-  if(reportCircle){reportCircle.remove();reportCircle=null;}
+  clearDrawing();
+  reportPolygon = null;
   closeModal('reportOverlay');
+  // Also cancel draw mode if active
+  if(drawMode) cancelDraw();
 }
+
 function buildReportCats() {
   var el=document.getElementById('reportCats'); if(!el)return; el.innerHTML='';
   SAFETY_CATS.forEach(function(cat){
@@ -1481,24 +1600,44 @@ function buildReportCats() {
     el.appendChild(div);
   });
 }
+
 function submitReport() {
   if(!selectedReportCat){notify('Select a category first','warn',2500);return;}
-  if(!reportLat||!reportLng){notify('Place a pin on the map first','warn',2500);return;}
+  if(!reportPolygon||reportPolygon.length<3){notify('Draw an area on the map first','warn',2500);return;}
   var note=(document.getElementById('reportNote').value||'').trim();
   var btn=document.getElementById('reportSubmitBtn'); btn.disabled=true; btn.textContent='Submitting...';
-  var newRpt={id:'r_'+Date.now()+'_'+Math.random().toString(36).slice(2,5),type:selectedReportCat,lat:reportLat,lng:reportLng,radius:reportRadius,note:note,ts:Date.now(),confirmations:0,city:S.city||'unknown'};
+  // Compute centroid
+  var cLat=0, cLng=0;
+  reportPolygon.forEach(function(p){cLat+=p.lat;cLng+=p.lng;});
+  cLat/=reportPolygon.length; cLng/=reportPolygon.length;
+  // Estimate radius from polygon bounds
+  var bounds = L.latLngBounds(reportPolygon);
+  var radiusM = Math.round(bounds.getNorthEast().distanceTo(bounds.getSouthWest())/2);
+  var newRpt={
+    id:'r_'+Date.now()+'_'+Math.random().toString(36).slice(2,5),
+    type:selectedReportCat,
+    lat:cLat, lng:cLng,
+    radius:Math.max(50,Math.min(2000,radiusM)),
+    polygon:reportPolygon.map(function(p){return{lat:p.lat,lng:p.lng};}),
+    note:note, ts:Date.now(), confirmations:0, city:S.city||'unknown'
+  };
   var reports=getSafetyReports(); reports.push(newRpt); saveSafetyReports(reports); updateZones(newRpt);
-  if(reportPinMarker){reportPinMarker.remove();reportPinMarker=null;}
-  if(reportCircle){reportCircle.remove();reportCircle=null;}
-  closeModal('reportOverlay'); drawSafetyPins(); if(S.locs.length)renderCards();
+  // Keep polygon on map — it becomes the report pin
+  clearDrawing();
+  reportPolygon=null;
+  closeModal('reportOverlay');
+  drawSafetyPins();
+  if(S.locs.length) renderCards();
   var cat=SAFETY_CATS.find(function(c){return c.t===selectedReportCat;});
-  notify('Report submitted - visible for 2+ hours','danger',5000);
+  notify('Report submitted — visible for 2+ hours. Each confirmation extends it.','danger',5000);
   btn.disabled=false; btn.textContent='Submit report';
 }
+
 function confirmReport(id) {
-  var reports=getSafetyReports(),rpt=reports.find(function(r){return r.id===id;});
-  if(rpt){rpt.confirmations=(rpt.confirmations||0)+1;saveSafetyReports(reports);drawSafetyPins();notify('Confirmed - extended by 30 minutes','ok',3000);if(MAP)MAP.closePopup();}
+  var reports=getSafetyReports(), rpt=reports.find(function(r){return r.id===id;});
+  if(rpt){rpt.confirmations=(rpt.confirmations||0)+1;saveSafetyReports(reports);drawSafetyPins();notify('Confirmed — extended by 30 minutes','ok',3000);if(MAP)MAP.closePopup();}
 }
+
 function openSafetyPanel() {
   var reports=getSafetyReports();
   var zones=getZones().filter(function(z){return z.count>=3;}).sort(function(a,b){return b.count-a.count;});
@@ -1512,7 +1651,7 @@ function openSafetyPanel() {
       html+='<div class="safety-report-item" style="cursor:pointer" onclick="openZoneDetail(''+z.id+'')">';
       html+='<div class="sri-icon">'+cat.e+'</div><div class="sri-body"><div class="sri-type">'+cat.n+'</div>';
       html+='<div class="sri-note" style="color:'+col+';font-weight:600">'+z.count+' reports in 30 days</div>';
-      html+='<div class="sri-meta">Tap for details and safety advice</div></div></div>';
+      html+='<div class="sri-meta">Tap for details</div></div></div>';
     });
   }
   html+='<div class="modal-section">Active now</div>';
@@ -1525,13 +1664,14 @@ function openSafetyPanel() {
     html+='<div class="safety-report-item"><div class="sri-icon">'+cat.e+'</div><div class="sri-body">';
     html+='<div class="sri-type">'+cat.n+(r.confirmations>=3?' Verified':'')+'</div>';
     if(r.note)html+='<div class="sri-note">'+r.note+'</div>';
-    html+='<div class="sri-meta">'+ageTxt+' - '+(r.confirmations||0)+' confirmations'+(dk?' - '+fmtDist(dk)+' away':'')+' &nbsp;<span class="sri-confirm" data-rid="'+r.id+'" onclick="confirmReport(this.dataset.rid)">Still here</span></div>';
+    html+='<div class="sri-meta">'+ageTxt+' &middot; '+(r.confirmations||0)+' confirmations'+(dk?' &middot; '+fmtDist(dk)+' away':'')+' &nbsp;<span class="sri-confirm" data-rid="'+r.id+'" onclick="confirmReport(this.dataset.rid)">Still here</span></div>';
     html+='</div></div>';
   });}
-  html+='<div style="margin-top:14px;text-align:center"><button onclick="closeModal('detailOverlay');setTimeout(function(){openReportModal(null,null);},50)" style="background:var(--danger);color:#fff;border:none;border-radius:20px;padding:9px 20px;font-family:Poppins,sans-serif;font-size:12px;font-weight:600;cursor:pointer">Report new incident</button></div>';
+  html+='<div style="margin-top:14px;text-align:center"><button onclick="closeModal('detailOverlay');startDrawReport()" style="background:var(--danger);color:#fff;border:none;border-radius:20px;padding:9px 20px;font-family:Poppins,sans-serif;font-size:12px;font-weight:600;cursor:pointer">Report new incident</button></div>';
   document.getElementById('detailContent').innerHTML=html;
   openModal('detailOverlay');
 }
+
 document.getElementById('reportNote').addEventListener('input',function(){var el=document.getElementById('noteLen');if(el)el.textContent=this.value.length;});
 
 // ═══════════════════════════════════════════
