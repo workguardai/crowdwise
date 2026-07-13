@@ -1003,23 +1003,42 @@ function drawSafetyPins() {
   safetyLayers.forEach(function(m){try{m.remove();}catch(e){}});
   safetyLayers=[];
   if(!S.safetyOn||!MAP) return;
-  var reports = getSafetyReports();
-  if(!S.city) return; // Only show safety pins when a city is loaded
-  reports.forEach(function(rpt){
-    var cat = SAFETY_CATS.find(function(c){return c.t===rpt.type;})||{e:'⚠️',n:'Alert'};
-    var ageMs = Date.now()-rpt.ts;
-    var ageMin = Math.round(ageMs/60000);
-    var ageTxt = ageMin<60 ? ageMin+'min ago' : Math.floor(ageMin/60)+'h ago';
-    var opacity = Math.max(0.4, 1-(ageMs/(2*60*60*1000)));
-    var mk = L.marker([rpt.lat,rpt.lng],{
-      icon: L.divIcon({className:'', html:'<div class="safety-pin" style="background:#E74C3C;opacity:'+opacity+'">'+cat.e+'</div>', iconSize:[26,26], iconAnchor:[13,13]})
-    }).addTo(MAP);
-    var rptId = rpt.id;
-    var confirms = rpt.confirmations||0;
-    mk.bindPopup('<strong>'+cat.e+' '+cat.n+'</strong>'+(rpt.note?'<div style="font-size:10px;color:#555;margin-top:2px">'+rpt.note+'</div>':'')+'<div style="font-size:9px;color:#999;margin-top:3px">'+ageTxt+' · '+confirms+' confirmations</div><button class="pop-btn" style="background:#E74C3C" data-rid="'+rptId+'" onclick="confirmReport(this.dataset.rid)">✓ Still happening</button>',{maxWidth:210});
+  getSafetyReports().forEach(function(rpt){
+    var cat=SAFETY_CATS.find(function(c){return c.t===rpt.type;})||{e:'!',n:'Alert'};
+    var ageMs=Date.now()-rpt.ts;
+    var maxAge=Math.min(24*3600000,2*3600000+(rpt.confirmations||0)*30*60000);
+    var fresh=Math.max(0.35,1-(ageMs/maxAge));
+    var ageMin=Math.round(ageMs/60000);
+    var ageTxt=ageMin<60?ageMin+'min ago':Math.floor(ageMin/60)+'h ago';
+    var confirms=rpt.confirmations||0; var r=rpt.radius||50;
+    var circle=L.circle([rpt.lat,rpt.lng],{radius:r,color:'#E74C3C',fillColor:'#E74C3C',fillOpacity:fresh*0.18,weight:1.5,opacity:fresh*0.7,dashArray:confirms>=3?null:'5 4'}).addTo(MAP);
+    safetyLayers.push(circle);
+    var rptId=rpt.id;
+    var iconHtml='<div style="background:#E74C3C;opacity:'+fresh+';width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;box-shadow:0 2px 8px rgba(231,76,60,.5);border:2px solid #fff;cursor:pointer">'+cat.e+'</div>';
+    var mk=L.marker([rpt.lat,rpt.lng],{icon:L.divIcon({className:'',html:iconHtml,iconSize:[28,28],iconAnchor:[14,14]})}).addTo(MAP);
+    var popHtml='<strong>'+cat.e+' '+cat.n+(confirms>=3?' Verified':'')+' </strong>'+(rpt.note?'<div style="font-size:10px;color:#555;margin-top:2px">'+rpt.note+'</div>':'')+'<div style="font-size:9px;color:#999;margin-top:3px">'+ageTxt+' &middot; '+confirms+' confirm'+(confirms!==1?'s':'')+' &middot; '+r+'m area</div><button class="pop-btn" style="background:#E74C3C" data-rid="'+rptId+'" onclick="confirmReport(this.dataset.rid)">Still happening (+30min)</button>';
+    mk.bindPopup(popHtml,{maxWidth:220});
     safetyLayers.push(mk);
   });
+  drawZones();
 }
+function drawZones() {
+  if(!window.zoneLayers) window.zoneLayers=[];
+  zoneLayers.forEach(function(l){try{l.remove();}catch(e){}});
+  zoneLayers=[];
+  if(!S.safetyOn||!MAP) return;
+  getZones().forEach(function(z){
+    if(z.count<3) return;
+    var cat=SAFETY_CATS.find(function(c){return c.t===z.type;})||{e:'!',n:'Alert'};
+    var col=z.count>=10?'#C0392B':z.count>=5?'#E74C3C':'#F39C12';
+    var zc=L.circle([z.lat,z.lng],{radius:Math.max(150,z.radius||150),color:col,fillColor:col,fillOpacity:0.07+Math.min(1,z.count/10)*0.1,weight:2,opacity:0.5}).addTo(MAP);
+    var lbl=L.marker([z.lat,z.lng],{icon:L.divIcon({className:'',html:'<div style="background:rgba(192,57,43,.85);color:#fff;border-radius:20px;padding:2px 8px;font-size:9px;font-weight:700;white-space:nowrap">'+cat.e+' '+z.count+' reports</div>',iconSize:[90,20],iconAnchor:[45,10]})}).addTo(MAP);
+    var zId=z.id;
+    zc.on('click',function(){openZoneDetail(zId);}); lbl.on('click',function(){openZoneDetail(zId);});
+    zoneLayers.push(zc,lbl);
+  });
+}
+
 
 // ═══════════════════════════════════════════
 //  POI BAR
@@ -1360,98 +1379,160 @@ function switchPOIMode(btn) {
   if(S.uLat){var dk=dist(S.uLat,S.uLng,parseFloat(btn.dataset.lat),parseFloat(btn.dataset.lng));var t=document.getElementById('pTime'),d=document.getElementById('pDist');if(t)t.textContent=fmtTime(dk/sp[S.transMode]*60);if(d)d.textContent=fmtDist(dk)+' from you';}
 }
 
-// ═══════════════════════════════════════════
+// ===================================================
 //  SAFETY REPORTS
-// ═══════════════════════════════════════════
+// ===================================================
+function getZones() { try{return JSON.parse(localStorage.getItem('cw_zones')||'[]');}catch(e){return[];} }
+function saveZones(z) { localStorage.setItem('cw_zones',JSON.stringify(z)); }
+function updateZones(rpt) {
+  var zones=getZones();
+  var ex=zones.find(function(z){return z.type===rpt.type&&dist(z.lat,z.lng,rpt.lat,rpt.lng)<0.2;});
+  if(ex){ex.count++;ex.lat=(ex.lat+rpt.lat)/2;ex.lng=(ex.lng+rpt.lng)/2;}
+  else zones.push({id:'z_'+Date.now(),lat:rpt.lat,lng:rpt.lng,type:rpt.type,count:1,radius:rpt.radius||100});
+  saveZones(zones);
+}
+var zoneLayers = [];
+function openZoneDetail(zId) {
+  var zone=getZones().find(function(z){return z.id===zId;}); if(!zone)return;
+  var cat=SAFETY_CATS.find(function(c){return c.t===zone.type;})||{e:'!',n:'Alert'};
+  var sev=zone.count>=10?'High risk area':zone.count>=5?'Moderate concern':'Emerging pattern';
+  var col=zone.count>=10?'var(--danger)':'var(--amber)';
+  var advice={theft:'Keep bags close, avoid phone use.',unsafe:'Avoid at night, travel in groups.',harassment:'Stay on main streets.',lighting:'Use lit streets at night.'}[zone.type]||'Exercise caution.';
+  var html='<div class="modal-title">'+cat.e+' '+cat.n+' zone</div>';
+  html+='<div style="background:#FFF5F5;border:1px solid rgba(231,76,60,.2);border-radius:10px;padding:12px;margin:10px 0">';
+  html+='<div style="font-size:13px;font-weight:700;color:'+col+';margin-bottom:6px">'+sev+'</div>';
+  html+='<div style="font-size:11px;color:var(--muted);line-height:1.7">'+zone.count+' community reports in 30 days ('+Math.max(150,zone.radius||150)+'m area).</div>';
+  html+='<div style="font-size:11px;color:var(--ink);font-weight:600;margin-top:6px">Tip: '+advice+'</div></div>';
+  html+='<div style="text-align:center"><button onclick="openReportModal(null,null)" style="background:var(--danger);color:#fff;border:none;border-radius:20px;padding:9px 18px;font-family:Poppins,sans-serif;font-size:11px;font-weight:600;cursor:pointer">Report incident here</button></div>';
+  document.getElementById('detailContent').innerHTML=html;
+  openModal('detailOverlay');
+}
+var reportRadius = 50;
+var reportMode = false;
+var reportPinMarker = null;
+var reportCircle = null;
+function openReportModal(lat, lng) {
+  reportLat=lat?parseFloat(lat):null; reportLng=lng?parseFloat(lng):null;
+  selectedReportCat=null; reportRadius=50;
+  buildReportCats();
+  var noteEl=document.getElementById('reportNote');
+  if(noteEl){noteEl.value='';var nl=document.getElementById('noteLen');if(nl)nl.textContent='0';}
+  document.querySelectorAll('.area-size-btn').forEach(function(b){b.classList.toggle('active',b.dataset.radius==='50');});
+  var s1=document.getElementById('reportStep1'),s2=document.getElementById('reportStep2');
+  if(s1)s1.style.display='block'; if(s2)s2.style.display='none';
+  if(reportLat&&reportLng){placeReportPin(reportLat,reportLng);}
+  else{enterReportMode();}
+  openModal('reportOverlay');
+}
+function enterReportMode() {
+  reportMode=true;
+  var h=document.getElementById('reportHint'); if(h)h.classList.add('show');
+  if(MAP){MAP.on('click',onMapClickReport); MAP.getContainer().style.cursor='crosshair';}
+}
+function cancelReportMode() {
+  reportMode=false;
+  var h=document.getElementById('reportHint'); if(h)h.classList.remove('show');
+  if(MAP){MAP.off('click',onMapClickReport); MAP.getContainer().style.cursor='';}
+}
+function onMapClickReport(e) {
+  if(!reportMode)return;
+  cancelReportMode();
+  placeReportPin(e.latlng.lat,e.latlng.lng);
+  openModal('reportOverlay');
+}
+function placeReportPin(lat,lng) {
+  reportLat=lat; reportLng=lng;
+  if(reportPinMarker){reportPinMarker.remove();reportPinMarker=null;}
+  if(reportCircle){reportCircle.remove();reportCircle=null;}
+  if(MAP){
+    reportPinMarker=L.marker([lat,lng],{icon:L.divIcon({className:'',html:'<div style="background:#E74C3C;width:22px;height:22px;border-radius:50%;border:3px solid #fff;box-shadow:0 2px 8px rgba(231,76,60,.5)"></div>',iconSize:[22,22],iconAnchor:[11,11]})}).addTo(MAP);
+    reportCircle=L.circle([lat,lng],{radius:reportRadius,color:'#E74C3C',fillColor:'#E74C3C',fillOpacity:.15,weight:2,dashArray:'5 4'}).addTo(MAP);
+  }
+  var s1=document.getElementById('reportStep1'),s2=document.getElementById('reportStep2');
+  if(s1)s1.style.display='none'; if(s2)s2.style.display='block';
+  var ct=document.getElementById('reportPinConfirmText');
+  if(ct)ct.textContent='Pin placed at '+lat.toFixed(5)+', '+lng.toFixed(5);
+}
+function useLocationForReport() {
+  if(!S.uLat){notify('Enable location first','warn',3000);return;}
+  placeReportPin(S.uLat,S.uLng);
+}
+function setAreaRadius(r,btn) {
+  reportRadius=r;
+  document.querySelectorAll('.area-size-btn').forEach(function(b){b.classList.remove('active');});
+  btn.classList.add('active');
+  if(reportCircle&&reportLat)reportCircle.setRadius(r);
+}
+function cancelReport() {
+  cancelReportMode();
+  if(reportPinMarker){reportPinMarker.remove();reportPinMarker=null;}
+  if(reportCircle){reportCircle.remove();reportCircle=null;}
+  closeModal('reportOverlay');
+}
 function buildReportCats() {
-  var el=document.getElementById('reportCats');
-  el.innerHTML='';
+  var el=document.getElementById('reportCats'); if(!el)return; el.innerHTML='';
   SAFETY_CATS.forEach(function(cat){
-    var div=document.createElement('div');
-    div.className='report-cat';
-    div.dataset.type=cat.t;
+    var div=document.createElement('div'); div.className='report-cat'; div.dataset.type=cat.t;
     div.innerHTML='<div class="report-cat-icon">'+cat.e+'</div><div><div class="report-cat-name">'+cat.n+'</div><div class="report-cat-desc">'+cat.d+'</div></div>';
     div.onclick=function(){
       document.querySelectorAll('.report-cat').forEach(function(c){c.classList.remove('selected');});
-      div.classList.add('selected');
-      selectedReportCat=cat.t;
+      div.classList.add('selected'); selectedReportCat=cat.t;
     };
     el.appendChild(div);
   });
 }
-
-function openReportModal(lat, lng) {
-  reportLat = lat ? parseFloat(lat) : (S.uLat||null);
-  reportLng = lng ? parseFloat(lng) : (S.uLng||null);
-  selectedReportCat = null;
-  buildReportCats();
-  document.getElementById('reportNote').value='';
-  document.getElementById('noteLen').textContent='0';
-  openModal('reportOverlay');
-}
-
-document.getElementById('reportNote').addEventListener('input', function(){
-  document.getElementById('noteLen').textContent=this.value.length;
-});
-
-async function submitReport() {
-  if(!selectedReportCat){ notify('Select a report category','warn',2500); return; }
-  var lat=reportLat, lng=reportLng;
-  if(!lat||!lng){ notify('Location not available. Enable location first (📍)','warn',3000); return; }
-  var note=document.getElementById('reportNote').value.trim();
-  var btn=document.getElementById('reportSubmitBtn');
-  btn.disabled=true; btn.textContent='Submitting…';
-
-  // Save to localStorage
-  var reports=getSafetyReports();
-  var newReport={
-    id: Date.now()+'_'+Math.random().toString(36).slice(2,6),
-    type: selectedReportCat,
-    lat: lat, lng: lng,
-    note: note,
-    ts: Date.now(),
-    confirmations: 0,
-    city: S.city||'unknown'
-  };
-  reports.push(newReport);
-  saveSafetyReports(reports);
-
-  closeModal('reportOverlay');
-  drawSafetyPins();
-
+function submitReport() {
+  if(!selectedReportCat){notify('Select a category first','warn',2500);return;}
+  if(!reportLat||!reportLng){notify('Place a pin on the map first','warn',2500);return;}
+  var note=(document.getElementById('reportNote').value||'').trim();
+  var btn=document.getElementById('reportSubmitBtn'); btn.disabled=true; btn.textContent='Submitting...';
+  var newRpt={id:'r_'+Date.now()+'_'+Math.random().toString(36).slice(2,5),type:selectedReportCat,lat:reportLat,lng:reportLng,radius:reportRadius,note:note,ts:Date.now(),confirmations:0,city:S.city||'unknown'};
+  var reports=getSafetyReports(); reports.push(newRpt); saveSafetyReports(reports); updateZones(newRpt);
+  if(reportPinMarker){reportPinMarker.remove();reportPinMarker=null;}
+  if(reportCircle){reportCircle.remove();reportCircle=null;}
+  closeModal('reportOverlay'); drawSafetyPins(); if(S.locs.length)renderCards();
   var cat=SAFETY_CATS.find(function(c){return c.t===selectedReportCat;});
-  notify('🚨 '+(cat?cat.n:'Report')+' reported — visible on map for 2 hours','danger',5000);
-
-  // Add to cards if city loaded
-  if(S.locs.length) renderCards();
-
+  notify('Report submitted - visible for 2+ hours','danger',5000);
   btn.disabled=false; btn.textContent='Submit report';
 }
-
 function confirmReport(id) {
-  var reports=getSafetyReports();
-  var rpt=reports.find(function(r){return r.id===id;});
-  if(rpt){ rpt.confirmations=(rpt.confirmations||0)+1; saveSafetyReports(reports); drawSafetyPins(); notify('✓ Confirmation added — extends visibility by 30 minutes','ok',3000); }
+  var reports=getSafetyReports(),rpt=reports.find(function(r){return r.id===id;});
+  if(rpt){rpt.confirmations=(rpt.confirmations||0)+1;saveSafetyReports(reports);drawSafetyPins();notify('Confirmed - extended by 30 minutes','ok',3000);if(MAP)MAP.closePopup();}
 }
-
 function openSafetyPanel() {
   var reports=getSafetyReports();
-  var html='<div class="modal-title">🚨 Safety alerts</div>';
-  html+='<div style="font-size:11px;color:var(--muted);margin-bottom:14px">Community-reported incidents. Updates every few minutes.</div>';
-  if(!reports.length){
-    html+='<div class="empty-state"><div class="empty-icon">✅</div><div class="empty-title">No active alerts</div><div class="empty-sub">No incidents reported in the last 2 hours. Tap the 🚨 button to report something.</div></div>';
-  } else {
-    reports.forEach(function(r){
-      var cat=SAFETY_CATS.find(function(c){return c.t===r.type;})||{e:'⚠️',n:'Alert'};
-      var ageMin=Math.round((Date.now()-r.ts)/60000);
-      var ageTxt=ageMin<60?ageMin+' min ago':Math.floor(ageMin/60)+'h ago';
-      html+='<div class="safety-report-item"><div class="sri-icon">'+cat.e+'</div><div class="sri-body"><div class="sri-type">'+cat.n+'</div>'+(r.note?'<div class="sri-note">'+r.note+'</div>':'')+'<div class="sri-meta">'+ageTxt+' · '+(r.confirmations||0)+' confirmations · '+fmtDist(S.uLat?dist(S.uLat,S.uLng,r.lat,r.lng):0)+' away &nbsp;<span class="sri-confirm" data-rid="'+r.id+'" onclick="confirmReport(this.dataset.rid)">✓ Still happening</span></div></div></div>';
+  var zones=getZones().filter(function(z){return z.count>=3;}).sort(function(a,b){return b.count-a.count;});
+  var html='<div class="modal-title">Safety intelligence</div>';
+  html+='<div style="font-size:11px;color:var(--muted);margin-bottom:10px">Community incidents and historical risk patterns.</div>';
+  if(zones.length){
+    html+='<div class="modal-section">Known risk zones</div>';
+    zones.slice(0,5).forEach(function(z){
+      var cat=SAFETY_CATS.find(function(c){return c.t===z.type;})||{e:'!',n:'Alert'};
+      var col=z.count>=10?'#C0392B':z.count>=5?'#E74C3C':'#F39C12';
+      html+='<div class="safety-report-item" style="cursor:pointer" onclick="openZoneDetail(''+z.id+'')">';
+      html+='<div class="sri-icon">'+cat.e+'</div><div class="sri-body"><div class="sri-type">'+cat.n+'</div>';
+      html+='<div class="sri-note" style="color:'+col+';font-weight:600">'+z.count+' reports in 30 days</div>';
+      html+='<div class="sri-meta">Tap for details and safety advice</div></div></div>';
     });
   }
-  html+='<div style="margin-top:14px;text-align:center"><button onclick="openReportModal(null,null)" style="background:var(--danger);color:#fff;border:none;border-radius:20px;padding:9px 20px;font-family:Poppins,sans-serif;font-size:12px;font-weight:600;cursor:pointer">🚨 Report new incident</button></div>';
+  html+='<div class="modal-section">Active now</div>';
+  if(!reports.length){html+='<div style="text-align:center;padding:16px;color:var(--sub)">No active alerts in the last 2 hours</div>';}
+  else{reports.forEach(function(r){
+    var cat=SAFETY_CATS.find(function(c){return c.t===r.type;})||{e:'!',n:'Alert'};
+    var ageMin=Math.round((Date.now()-r.ts)/60000);
+    var ageTxt=ageMin<60?ageMin+' min ago':Math.floor(ageMin/60)+'h ago';
+    var dk=S.uLat?dist(S.uLat,S.uLng,r.lat,r.lng):null;
+    html+='<div class="safety-report-item"><div class="sri-icon">'+cat.e+'</div><div class="sri-body">';
+    html+='<div class="sri-type">'+cat.n+(r.confirmations>=3?' Verified':'')+'</div>';
+    if(r.note)html+='<div class="sri-note">'+r.note+'</div>';
+    html+='<div class="sri-meta">'+ageTxt+' - '+(r.confirmations||0)+' confirmations'+(dk?' - '+fmtDist(dk)+' away':'')+' &nbsp;<span class="sri-confirm" data-rid="'+r.id+'" onclick="confirmReport(this.dataset.rid)">Still here</span></div>';
+    html+='</div></div>';
+  });}
+  html+='<div style="margin-top:14px;text-align:center"><button onclick="closeModal('detailOverlay');setTimeout(function(){openReportModal(null,null);},50)" style="background:var(--danger);color:#fff;border:none;border-radius:20px;padding:9px 20px;font-family:Poppins,sans-serif;font-size:12px;font-weight:600;cursor:pointer">Report new incident</button></div>';
   document.getElementById('detailContent').innerHTML=html;
   openModal('detailOverlay');
 }
+document.getElementById('reportNote').addEventListener('input',function(){var el=document.getElementById('noteLen');if(el)el.textContent=this.value.length;});
 
 // ═══════════════════════════════════════════
 //  MODAL HELPERS
